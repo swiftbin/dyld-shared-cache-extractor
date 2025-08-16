@@ -12,8 +12,8 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.2.0"),
-        .package(url: "https://github.com/p-x9/MachOKit.git", from: "0.37.0"),
-        .package(url: "https://github.com/p-x9/swift-fileio.git", from: "0.11.0")
+        .package(url: "https://github.com/p-x9/MachOKit.git", branch: "main"),
+        .package(url: "https://github.com/p-x9/swift-fileio.git", from: "0.12.0")
     ],
     targets: [
         .executableTarget(
