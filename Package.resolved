@@ -1,13 +1,13 @@
 {
-  "originHash" : "d6d5781dc1f507bc4d49db255315ad647ccda98524d1264abcfc01ecf321b65b",
+  "originHash" : "de21ee06f6dbef59f4e1301c4661a3704864b18d1557e5782b3f9b268dead456",
   "pins" : [
     {
       "identity" : "machokit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/p-x9/MachOKit.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "6ce89c36adf52c76097fd4959733f931233dac03"
+        "revision" : "954f8ad0b5abb8ebcacb36238765559cde10caa2",
+        "version" : "0.38.0"
       }
     },
     {
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser.git",
       "state" : {
-        "revision" : "41982a3656a71c768319979febd796c6fd111d5c",
-        "version" : "1.5.0"
+        "revision" : "309a47b2b1d9b5e991f36961c983ecec72275be3",
+        "version" : "1.6.1"
       }
     },
     {
