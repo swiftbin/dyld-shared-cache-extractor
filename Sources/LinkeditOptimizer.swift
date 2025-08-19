@@ -177,10 +177,10 @@ extension LinkeditOptimizer {
         var functionStartsSize = 0
         if let functionStarts {
             functionStartsSize = numericCast(functionStarts.datasize)
-            let data = try machO.fileHandle.readData(
+            let data = machO._readLinkEditData(
                 offset: numericCast(functionStarts.dataoff),
-                length: functionStartsSize
-            )
+                length: numericCast(functionStarts.datasize)
+            )!
             newLinkeditData.append(data)
         }
 
@@ -195,10 +195,10 @@ extension LinkeditOptimizer {
         var dataInCodeSize = 0
         if let dataInCode {
             dataInCodeSize = numericCast(dataInCode.datasize)
-            let data = try machO.fileHandle.readData(
+            let data = machO._readLinkEditData(
                 offset: numericCast(dataInCode.dataoff),
-                length: dataInCodeSize
-            )
+                length: numericCast(dataInCode.datasize)
+            )!
             newLinkeditData.append(data)
         }
 
@@ -297,8 +297,7 @@ extension LinkeditOptimizer {
         }
 
         if newSymCount != newSymTab.count {
-            print("symbol count miscalculation\n")
-            return
+            throw "symbol count miscalculation"
         }
 
         // pointer align
