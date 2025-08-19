@@ -93,7 +93,9 @@ extension SharedCacheDylibExtractor {
         try writeHandle.insertData(newLinkeditData, at: writeHandle.size)
 
         // Page align file
-        let pad = (4096 - writeHandle.size % 4096) % 4096
+        let current = writeHandle.size
+        let aligned = writeHandle.size.alignedUp(to: 4096)
+        let pad = aligned - current
         if pad != 0 {
             try writeHandle.insertData(Data(count: pad), at: writeHandle.size)
         }

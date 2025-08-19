@@ -151,9 +151,7 @@ extension LinkeditOptimizer {
             }
         }
 
-        // TODO: not original, check
         exports = machO.exportTrie?.exportedSymbols ?? []
-
 
         // dylibs iOS 9 dyld caches have bogus LC_SEGMENT_SPLIT_INFO
         if let command = machO.loadCommands.of(.segmentSplitInfo).first(where: { _ in true }) {
@@ -185,10 +183,10 @@ extension LinkeditOptimizer {
         }
 
         // pointer align
-        let pad = (MemoryLayout<UInt64>.size - ((linkedit.fileOffset + newLinkeditData.count) % MemoryLayout<UInt64>.size)) % MemoryLayout<UInt64>.size
-        if pad != 0 {
-            newLinkeditData.append(Data(count: pad))
-        }
+        newLinkeditData.pad(
+            toAlignment: MemoryLayout<UInt64>.size,
+            baseOffset: linkedit.fileOffset
+        )
 
         // data in codes
         let newDataInCodeOffset = newLinkeditData.count
@@ -301,10 +299,10 @@ extension LinkeditOptimizer {
         }
 
         // pointer align
-        let pad2 = (MemoryLayout<UInt64>.size - ((linkedit.fileOffset + newLinkeditData.count) % MemoryLayout<UInt64>.size)) % MemoryLayout<UInt64>.size
-        if pad2 != 0 {
-            newLinkeditData.append(Data(count: pad2))
-        }
+        newLinkeditData.pad(
+            toAlignment: MemoryLayout<UInt64>.size,
+            baseOffset: linkedit.fileOffset
+        )
 
         let newSymTabOffset = newLinkeditData.count
 
@@ -330,10 +328,9 @@ extension LinkeditOptimizer {
         let newStringPoolOffset = newLinkeditData.count
 
         // pointer align string pool size
-        let pad3 = (MemoryLayout<UInt64>.size - (newSymNames.count % MemoryLayout<UInt64>.size)) % MemoryLayout<UInt64>.size
-        if pad3 != 0 {
-            newSymNames.append(Data(count: pad3))
-        }
+        newSymNames.pad(
+            toAlignment: MemoryLayout<UInt64>.size
+        )
 
         newLinkeditData.append(newSymNames)
 
@@ -360,7 +357,7 @@ extension LinkeditOptimizer {
 
         let linkeditFilesize: UInt64 = numericCast(self.symtab!.stroff + self.symtab!.strsize) - linkedit.fileoff
         self.linkedit?.layout.filesize = linkeditFilesize
-        self.linkedit?.layout.vmsize = (linkeditFilesize + 4095) & ~UInt64(4095)
+        self.linkedit?.layout.vmsize = linkeditFilesize.alignedUp(to: 4096)
 
 
         // write command
