@@ -215,11 +215,13 @@ extension LinkeditOptimizer {
         // local symbols
         var localSymbols: [MachOFile.Symbol] = []
         if let symbolsCache = try? cache.symbolCache,
-           let info = symbolsCache.localSymbolsInfo {
-            let allSymbols = Array(info.symbols(in: symbolsCache))
-            if let entry = info.entry(for: machO, in: symbolsCache) {
-                localSymbols = Array(allSymbols[entry.nlistRange])
-            }
+           let info = symbolsCache.localSymbolsInfo,
+           let entry = info.entry(for: machO, in: symbolsCache) {
+            if let symbols64 = info.symbols64(in: symbolsCache) {
+                localSymbols = Array(symbols64[entry.nlistRange])
+            } /*else if let symbols32 = info.symbols32(in: symbolsCache) {
+                localSymbols = Array(symbols32[entry.nlistRange])
+            }*/
         }
 
         // compute number of symbols in new symbol table
