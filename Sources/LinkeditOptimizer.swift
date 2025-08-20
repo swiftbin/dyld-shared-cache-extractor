@@ -9,22 +9,44 @@
 import Foundation
 @_spi(Support) import MachOKit
 
-class LinkeditOptimizer {
+enum LinkeditOptimizerError: Error {
+    case notFoundLinkedit
+    case notFoundSymtab
+    case notFoundDysymtab
+    case invalidSymbolCount
+}
+
+extension LinkeditOptimizerError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .notFoundLinkedit:
+            "__LINKEDIT not found"
+        case .notFoundSymtab:
+            "LC_SYMTAB not found"
+        case .notFoundDysymtab:
+            "LC_DYSYMTAB not found"
+        case .invalidSymbolCount:
+            "symbol count miscalculation"
+        }
+    }
+}
+
+final class LinkeditOptimizer {
     typealias FileHandle = MachOFile.File
 
     let machO: MachOFile
     let cache: FullDyldCache
 
-    var linkedit: SegmentCommand64?
-    var symtab: LoadCommandInfo<symtab_command>?
-    var dysymtab: LoadCommandInfo<dysymtab_command>?
-    var functionStarts: LoadCommandInfo<linkedit_data_command>?
-    var dataInCode: LoadCommandInfo<linkedit_data_command>?
+    private(set) var linkedit: SegmentCommand64?
+    private(set) var symtab: LoadCommandInfo<symtab_command>?
+    private(set) var dysymtab: LoadCommandInfo<dysymtab_command>?
+    private(set) var functionStarts: LoadCommandInfo<linkedit_data_command>?
+    private(set) var dataInCode: LoadCommandInfo<linkedit_data_command>?
 
-    var exports: [ExportedSymbol] = []
-    var exportsTrieOffset: UInt32 = 0
-    var exportsTrieSize: UInt32 = 0
-    var reexportDeps: [Int] = []
+    private var exports: [ExportedSymbol] = []
+    private var exportsTrieOffset: UInt32 = 0
+    private var exportsTrieSize: UInt32 = 0
+    private var reexportDeps: [Int] = []
 
     init(
         machO: MachOFile,
@@ -166,9 +188,9 @@ extension LinkeditOptimizer {
         newLinkeditData: inout Data,
         writeHandle: FileHandle
     ) throws {
-        guard let linkedit else { throw "__LINKEDIT not found" }
-        guard let symtab else { throw "LC_SYMTAB not found" }
-        guard let dysymtab else { throw "LC_DYSYMTAB not found" }
+        guard let linkedit else { throw LinkeditOptimizerError.notFoundLinkedit }
+        guard let symtab else { throw LinkeditOptimizerError.notFoundSymtab }
+        guard let dysymtab else { throw LinkeditOptimizerError.notFoundDysymtab }
 
         // function starts
         let newFunctionStartsOffset = newLinkeditData.count
@@ -297,7 +319,7 @@ extension LinkeditOptimizer {
         }
 
         if newSymCount != newSymTab.count {
-            throw "symbol count miscalculation"
+            throw LinkeditOptimizerError.invalidSymbolCount
         }
 
         // pointer align
