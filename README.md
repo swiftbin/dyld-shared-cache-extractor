@@ -2,6 +2,8 @@
 
 A CLI tool to extract dylib from dyld_shared_cache
 
+ Re-implementation of the tool [dsc_extractor](https://github.com/apple-oss-distributions/dyld/blob/93bd81f9d7fcf004fcebcb66ec78983882b41e71/other-tools/dsc_extractor.cpp), which exists in [apple-oss-distributions/dyld](https://github.com/apple-oss-distributions/dyld), in Swift using [MachOKit](https://github.com/p-x9/MachOKit).
+
 <!-- # Badges -->
 
 [![Github issues](https://img.shields.io/github/issues/swiftbin/dyld-shared-cache-extractor)](https://github.com/swiftbin/dyld-shared-cache-extractor/issues)
