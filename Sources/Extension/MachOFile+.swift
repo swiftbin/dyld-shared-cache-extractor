@@ -12,9 +12,11 @@ import FileIO
 
 extension MachOFile {
     internal typealias File = MemoryMappedFile
+}
 
-    var fileHandle: File {
-        try! .open(url: url, isWritable: false)
+extension MachOFile {
+    var alignment: Int {
+        is64Bit ? MemoryLayout<UInt64>.size : MemoryLayout<UInt32>.size
     }
 }
 
