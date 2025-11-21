@@ -287,6 +287,13 @@ extension LinkeditOptimizer {
             } else if let symbols32 = info.symbols32(in: symbolsCache) {
                 localSymbols = Array(symbols32[entry.nlistRange])
             }
+        } else if let info = cache.localSymbolsInfo,
+           let entry = info.entry(for: machO, in: cache) {
+            if let symbols64 = info.symbols64(in: cache) {
+                localSymbols = Array(symbols64[entry.nlistRange])
+            } else if let symbols32 = info.symbols32(in: cache) {
+                localSymbols = Array(symbols32[entry.nlistRange])
+            }
         }
 
         // compute number of symbols in new symbol table
