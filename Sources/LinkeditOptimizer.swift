@@ -34,10 +34,20 @@ extension LinkeditOptimizerError: LocalizedError {
 final class LinkeditOptimizer {
     typealias FileHandle = MachOFile.File
 
+    enum Segment {
+        case _32(SegmentCommand)
+        case _64(SegmentCommand64)
+    }
+
+    enum SymTab {
+        case _32([Nlist])
+        case _64([Nlist64])
+    }
+
     let machO: MachOFile
     let cache: FullDyldCache
 
-    private(set) var linkedit: SegmentCommand64?
+    private(set) var linkedit: Segment?
     private(set) var symtab: LoadCommandInfo<symtab_command>?
     private(set) var dysymtab: LoadCommandInfo<dysymtab_command>?
     private(set) var functionStarts: LoadCommandInfo<linkedit_data_command>?
@@ -75,18 +85,50 @@ extension LinkeditOptimizer {
 
         for loadCommand in machO.loadCommands {
             switch loadCommand {
-//            case let .segment(segment):
-//                if segment.segmentName == "__LINKEDIT" {
-//                    linkedit = segment
-//                }
-//                cumulativeFileSize += UInt64(segment.filesize)
-//                // TODO: Support 32bit
+            case let .segment(segment):
+                if segment.segmentName == "__LINKEDIT" {
+                    var segment = segment
+                    segment.layout.fileoff = numericCast(cumulativeFileSize)
+                    segment.layout.filesize = segment.vmsize
+                    linkedit = ._32(segment)
+                }
+
+                let layoutOffset = machO.headerSize + loadCommand.offset
+                try writeHandle.write(
+                    UInt32(cumulativeFileSize),
+                    at: numericCast(
+                        layoutOffset + SegmentCommand.layoutOffset(of: \.fileoff)
+                    )
+                )
+                try writeHandle.write(
+                    segment.vmsize,
+                    at: numericCast(
+                        layoutOffset + SegmentCommand.layoutOffset(of: \.filesize)
+                    )
+                )
+
+                let sectionsStart = layoutOffset + SegmentCommand.layoutSize
+                let sections = segment.sections(in: machO)
+                for (i, section) in sections.enumerated() {
+                    let layoutOffset = sectionsStart + i * Section.layoutSize
+                    let offset: UInt32 = numericCast(cumulativeFileSize + numericCast(section.addr - segment.vmaddr))
+                    if section.offset != 0 {
+                        try writeHandle.write(
+                            offset,
+                            at: numericCast(
+                                layoutOffset + Section.layoutOffset(of: \.offset)
+                            )
+                        )
+                    }
+                }
+                cumulativeFileSize += numericCast(segment.filesize)
 
             case let .segment64(segment):
                 if segment.segmentName == "__LINKEDIT" {
-                    linkedit = segment
-                    linkedit?.layout.fileoff = cumulativeFileSize
-                    linkedit?.layout.filesize = segment.vmsize
+                    var segment = segment
+                    segment.layout.fileoff = cumulativeFileSize
+                    segment.layout.filesize = segment.vmsize
+                    linkedit = ._64(segment)
                 }
 
                 let layoutOffset = machO.headerSize + loadCommand.offset
@@ -206,7 +248,7 @@ extension LinkeditOptimizer {
 
         // pointer align
         newLinkeditData.pad(
-            toAlignment: MemoryLayout<UInt64>.size,
+            toAlignment: machO.alignment,
             baseOffset: linkedit.fileOffset
         )
 
@@ -238,12 +280,20 @@ extension LinkeditOptimizer {
         var localSymbols: [MachOFile.Symbol] = []
         if let symbolsCache = try? cache.symbolCache,
            let info = symbolsCache.localSymbolsInfo,
-           let entry = info.entry(for: machO, in: symbolsCache) {
+           // On new caches, the dylibOffset is 64-bits, and is a VM offset
+           let entry = info.entry64(for: machO, in: symbolsCache) {
             if let symbols64 = info.symbols64(in: symbolsCache) {
                 localSymbols = Array(symbols64[entry.nlistRange])
-            } /*else if let symbols32 = info.symbols32(in: symbolsCache) {
+            } else if let symbols32 = info.symbols32(in: symbolsCache) {
                 localSymbols = Array(symbols32[entry.nlistRange])
-            }*/
+            }
+        } else if let info = cache.localSymbolsInfo,
+           let entry = info.entry(for: machO, in: cache) {
+            if let symbols64 = info.symbols64(in: cache) {
+                localSymbols = Array(symbols64[entry.nlistRange])
+            } else if let symbols32 = info.symbols32(in: cache) {
+                localSymbols = Array(symbols32[entry.nlistRange])
+            }
         }
 
         // compute number of symbols in new symbol table
@@ -254,7 +304,7 @@ extension LinkeditOptimizer {
         // add room for N_INDR symbols for re-exported symbols
         newSymCount += exports.count
 
-        var newSymTab = [Nlist64]()
+        var newSymTab: SymTab = machO.is64Bit ? ._64([]) : ._32([])
         var newSymNames = Data()
         // first pool entry is always empty string
         newSymNames.append(0)
@@ -272,29 +322,43 @@ extension LinkeditOptimizer {
             for symbol in localSymbols {
                 let localName = symbol.name
                 // TODO: <corrupt local symbol name>
-                var nlist = (symbol.nlist as! Nlist64)
-                nlist.layout.n_un.n_strx = numericCast(newSymNames.count)
+                if machO.is64Bit {
+                    var nlist = (symbol.nlist as! Nlist64)
+                    nlist.layout.n_un.n_strx = numericCast(newSymNames.count)
+                    newSymTab.append(nlist)
+                } else {
+                    var nlist = (symbol.nlist as! Nlist)
+                    nlist.layout.n_un.n_strx = numericCast(newSymNames.count)
+                    newSymTab.append(nlist)
+                }
+
                 newSymNames.append(localName.data(using: .utf8) ?? Data())
                 newSymNames.append(.init(0))
-                newSymTab.append(nlist)
             }
         }
 
         // copy full symbol table from cache (skipping locals if they where elsewhere)
-        if let _symbols = machO.symbols64 {
-            var symbols = Array(_symbols)
-            if !localSymbols.isEmpty {
-                symbols = Array(symbols[Int(dysymtab.iextdefsym)...])
-            }
-            for symbol in symbols {
-                let symbolName = symbol.name
-                // TODO: <corrupt symbol name>
+        var symbols: [MachOFile.Symbol] = []
+        if !localSymbols.isEmpty {
+            let index: Int = numericCast(dysymtab.iextdefsym)
+            symbols = Array(machO.symbols[AnyIndex(index)...])
+        } else {
+            symbols = Array(machO.symbols)
+        }
+        for symbol in symbols {
+            let symbolName = symbol.name
+            // TODO: <corrupt symbol name>
+            if machO.is64Bit {
                 var nlist = (symbol.nlist as! Nlist64)
                 nlist.layout.n_un.n_strx = numericCast(newSymNames.count)
-                newSymNames.append(symbolName.data(using: .utf8) ?? Data())
-                newSymNames.append(.init(0))
+                newSymTab.append(nlist)
+            } else {
+                var nlist = (symbol.nlist as! Nlist)
+                nlist.layout.n_un.n_strx = numericCast(newSymNames.count)
                 newSymTab.append(nlist)
             }
+            newSymNames.append(symbolName.data(using: .utf8) ?? Data())
+            newSymNames.append(.init(0))
         }
 
         // <rdar://problem/16529213> recreate N_INDR symbols in extracted dylibs for debugger
@@ -303,19 +367,33 @@ extension LinkeditOptimizer {
             if importName.isEmpty {
                 importName = export.name
             }
-            var _nlist = nlist_64(
-                n_un: .init(n_strx: numericCast(newSymNames.count)),
-                n_type: UInt8(N_INDR | N_EXT),
-                n_sect: 0,
-                n_desc: 0,
-                n_value: 0
-            )
+
+            let n_strx: UInt32 = numericCast(newSymNames.count)
             newSymNames.append(export.name.data(using: .utf8) ?? Data())
             newSymNames.append(.init(0))
-            _nlist.n_value = numericCast(newSymNames.count)
+            let n_value: UInt64 = numericCast(newSymNames.count)
             newSymNames.append(importName.data(using: .utf8) ?? Data())
             newSymNames.append(.init(0))
-            newSymTab.append(unsafeBitCast(_nlist, to: Nlist64.self))
+
+            if machO.is64Bit {
+                let _nlist = nlist_64(
+                    n_un: .init(n_strx: n_strx),
+                    n_type: UInt8(N_INDR | N_EXT),
+                    n_sect: 0,
+                    n_desc: 0,
+                    n_value: n_value
+                )
+                newSymTab.append(unsafeBitCast(_nlist, to: Nlist64.self))
+            } else {
+                let _nlist = nlist(
+                    n_un: .init(n_strx: n_strx),
+                    n_type: UInt8(N_INDR | N_EXT),
+                    n_sect: 0,
+                    n_desc: 0,
+                    n_value: numericCast(n_value)
+                )
+                newSymTab.append(unsafeBitCast(_nlist, to: Nlist.self))
+            }
         }
 
         if newSymCount != newSymTab.count {
@@ -324,16 +402,22 @@ extension LinkeditOptimizer {
 
         // pointer align
         newLinkeditData.pad(
-            toAlignment: MemoryLayout<UInt64>.size,
+            toAlignment: machO.alignment,
             baseOffset: linkedit.fileOffset
         )
 
         let newSymTabOffset = newLinkeditData.count
 
         // Copy sym tab
-        let newSymTabData = newSymTab.reduce(into: Data(), {
-            $0.append($1.data)
-        })
+        let newSymTabData = if machO.is64Bit {
+            newSymTab.values64.reduce(into: Data(), {
+                $0.append($1.data)
+            })
+        } else {
+            newSymTab.values32.reduce(into: Data(), {
+                $0.append($1.data)
+            })
+        }
         newLinkeditData.append(newSymTabData)
 
         let newIndSymTabOffset = newLinkeditData.count
@@ -353,7 +437,7 @@ extension LinkeditOptimizer {
 
         // pointer align string pool size
         newSymNames.pad(
-            toAlignment: MemoryLayout<UInt64>.size
+            toAlignment: machO.alignment
         )
 
         newLinkeditData.append(newSymNames)
@@ -379,10 +463,20 @@ extension LinkeditOptimizer {
         self.dysymtab?.layout.nlocrel = 0
         self.dysymtab?.layout.indirectsymoff = numericCast(newIndSymTabOffset) + numericCast(linkedit.fileOffset)
 
-        let linkeditFilesize: UInt64 = numericCast(self.symtab!.stroff + self.symtab!.strsize) - linkedit.fileoff
-        self.linkedit?.layout.filesize = linkeditFilesize
-        self.linkedit?.layout.vmsize = linkeditFilesize.alignedUp(to: 4096)
+        let linkeditFilesize: UInt64 = numericCast(self.symtab!.stroff + self.symtab!.strsize) - numericCast(linkedit.fileOffset)
 
+        switch self.linkedit {
+        case ._32(var linkedit):
+            linkedit.layout.filesize = UInt32(linkeditFilesize)
+            linkedit.layout.vmsize = UInt32(linkeditFilesize.alignedUp(to: 4096))
+            self.linkedit = ._32(linkedit)
+        case ._64(var linkedit):
+            linkedit.layout.filesize = linkeditFilesize
+            linkedit.layout.vmsize = linkeditFilesize.alignedUp(to: 4096)
+            self.linkedit = ._64(linkedit)
+        case .none:
+            break
+        }
 
         // write command
         let base = machO.headerSize
@@ -412,10 +506,18 @@ extension LinkeditOptimizer {
             )
         }
         if let linkedit = self.linkedit {
-            try writeHandle.write(
-                linkedit.layout,
-                at: base + numericCast(linkedit.offset)
-            )
+            switch linkedit {
+            case ._32(let linkedit):
+                try writeHandle.write(
+                    linkedit.layout,
+                    at: base + numericCast(linkedit.offset)
+                )
+            case ._64(let linkedit):
+                try writeHandle.write(
+                    linkedit.layout,
+                    at: base + numericCast(linkedit.offset)
+                )
+            }
         }
     }
 }
@@ -451,5 +553,77 @@ extension LinkeditOptimizer {
         )
         try writeHandle.writeData(buffer, at: numericCast(start - commandSize))
         try writeHandle.writeData(Data(count: commandSize), at: numericCast(end - commandSize)) // fill zero
+    }
+}
+
+extension LinkeditOptimizer.Segment {
+    @inline(__always)
+    var fileOffset: Int {
+        switch self {
+        case ._64(let segment):
+            segment.fileOffset
+        case ._32(let segment):
+            segment.fileOffset
+        }
+    }
+}
+
+extension LinkeditOptimizer.SymTab {
+    @inline(__always)
+    var count: Int {
+        switch self {
+        case ._32(let list):
+            list.count
+        case ._64(let list):
+            list.count
+        }
+    }
+
+    @inline(__always)
+    var values64: [Nlist64] {
+        switch self {
+        case ._32:
+            fatalError(
+                "\(#function) called on 32-bit symtab, which is not supported"
+            )
+        case ._64(let list):
+            return list
+        }
+    }
+
+    @inline(__always)
+    var values32: [Nlist] {
+        switch self {
+        case ._32(let list):
+            return list
+        case ._64:
+            fatalError(
+                "\(#function) called on 64-bit symtab, which is not supported"
+            )
+        }
+    }
+
+    @inline(__always)
+    mutating func append(_ value: Nlist) {
+        switch self {
+        case ._32(let list):
+            self = ._32([value] + list)
+        case ._64:
+            fatalError(
+                "\(#function) called on 64-bit symtab, which is not supported"
+            )
+        }
+    }
+
+    @inline(__always)
+    mutating func append(_ value: Nlist64) {
+        switch self {
+        case ._32:
+            fatalError(
+                "\(#function) called on 64-bit symtab, which is not supported"
+            )
+        case ._64(let list):
+            self = ._64([value] + list)
+        }
     }
 }
