@@ -46,6 +46,7 @@ final class LinkeditOptimizer {
 
     let machO: MachOFile
     let cache: FullDyldCache
+    let skipLocalSymbols: Bool
 
     private(set) var linkedit: Segment?
     private(set) var symtab: LoadCommandInfo<symtab_command>?
@@ -60,10 +61,12 @@ final class LinkeditOptimizer {
 
     init(
         machO: MachOFile,
-        cache: FullDyldCache
+        cache: FullDyldCache,
+        skipLocalSymbols: Bool = false
     ) {
         self.machO = machO
         self.cache = cache
+        self.skipLocalSymbols = skipLocalSymbols
     }
 }
 
@@ -278,21 +281,23 @@ extension LinkeditOptimizer {
 
         // local symbols
         var localSymbols: [MachOFile.Symbol] = []
-        if let symbolsCache = try? cache.symbolCache,
-           let info = symbolsCache.localSymbolsInfo,
-           // On new caches, the dylibOffset is 64-bits, and is a VM offset
-           let entry = info.entry64(for: machO, in: symbolsCache) {
-            if let symbols64 = info.symbols64(in: symbolsCache) {
-                localSymbols = Array(symbols64[entry.nlistRange])
-            } else if let symbols32 = info.symbols32(in: symbolsCache) {
-                localSymbols = Array(symbols32[entry.nlistRange])
-            }
-        } else if let info = cache.localSymbolsInfo,
-           let entry = info.entry(for: machO, in: cache) {
-            if let symbols64 = info.symbols64(in: cache) {
-                localSymbols = Array(symbols64[entry.nlistRange])
-            } else if let symbols32 = info.symbols32(in: cache) {
-                localSymbols = Array(symbols32[entry.nlistRange])
+        if !skipLocalSymbols {
+            if let symbolsCache = try? cache.symbolCache,
+               let info = symbolsCache.localSymbolsInfo,
+               // On new caches, the dylibOffset is 64-bits, and is a VM offset
+               let entry = info.entry64(for: machO, in: symbolsCache) {
+                if let symbols64 = info.symbols64(in: symbolsCache) {
+                    localSymbols = Array(symbols64[entry.nlistRange])
+                } else if let symbols32 = info.symbols32(in: symbolsCache) {
+                    localSymbols = Array(symbols32[entry.nlistRange])
+                }
+            } else if let info = cache.localSymbolsInfo,
+                      let entry = info.entry(for: machO, in: cache) {
+                if let symbols64 = info.symbols64(in: cache) {
+                    localSymbols = Array(symbols64[entry.nlistRange])
+                } else if let symbols32 = info.symbols32(in: cache) {
+                    localSymbols = Array(symbols32[entry.nlistRange])
+                }
             }
         }
 

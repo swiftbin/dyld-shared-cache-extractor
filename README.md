@@ -16,7 +16,7 @@ A CLI tool to extract dylib from dyld_shared_cache
 ```sh
 OVERVIEW: Extract dylib from dyld shared cache
 
-USAGE: dyld-shared-cache-extractor <input-path> [--output <output>] [--dylib <dylib>] [--all]
+USAGE: dyld-shared-cache-extractor <input-path> [--output <output>] [--dylib <dylib>] [--all] [--skip-local-symbols]
 
 ARGUMENTS:
   <input-path>            Path to the input main dyld shared cache file.
@@ -26,6 +26,8 @@ OPTIONS:
                           (default: ./)
   -d, --dylib <dylib>     Name of dylib to be extracted.
   --all                   Extract all dylibs.
+  --skip-local-symbols    Skip extraction of local symbols from dyld local
+                          symbol cache.
   --version               Show the version.
   -h, --help              Show help information.
 ```
