@@ -33,6 +33,12 @@ struct dyld_shared_cache_extractor: ParsableCommand {
     @Flag(name: .long, help: "Extract all dylibs.")
     var all: Bool = false
 
+    @Flag(
+        name: .long,
+        help: "Skip extraction of local symbols from dyld local symbol cache."
+    )
+    var skipLocalSymbols: Bool = false
+
     var inputURL: URL { .init(fileURLWithPath: inputPath) }
     var outputDirectoryURL: URL {
         if let output {
@@ -121,7 +127,8 @@ extension dyld_shared_cache_extractor {
         outputDirectory: URL
     ) throws {
         let extractor = SharedCacheDylibExtractor(
-            outputDirectory: outputDirectory
+            outputDirectory: outputDirectory,
+            skipLocalSymbols: skipLocalSymbols
         )
         try extractor.extract(for: machO, in: cache)
     }

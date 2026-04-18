@@ -14,11 +14,16 @@ final class SharedCacheDylibExtractor {
     typealias FileHandle = MemoryMappedFile
 
     let outputDirectory: URL
+    let skipLocalSymbols: Bool
 
     private let fileManager = FileManager.default
 
-    init(outputDirectory: URL) {
+    init(
+        outputDirectory: URL,
+        skipLocalSymbols: Bool = false
+    ) {
         self.outputDirectory = outputDirectory
+        self.skipLocalSymbols = skipLocalSymbols
     }
 
     func extract(for machO: MachOFile, in cache: FullDyldCache) throws {
@@ -79,7 +84,8 @@ extension SharedCacheDylibExtractor {
         // optimize linkedit
         let linkeditOptimizer = LinkeditOptimizer(
             machO: machO,
-            cache: cache
+            cache: cache,
+            skipLocalSymbols: skipLocalSymbols
         )
         try linkeditOptimizer.optimizeLoadCommands(
             writeHandle: writeHandle
