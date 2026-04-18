@@ -48,7 +48,7 @@ fileprivate final class FileHandleHolder: @unchecked Sendable {
 }
 
 #if !canImport(ObjectiveC)
-final class WeakBox<Value: AnyObject> {
+fileprivate final class WeakBox<Value: AnyObject> {
     weak var value: Value?
     let id: ObjectIdentifier
 
@@ -58,7 +58,7 @@ final class WeakBox<Value: AnyObject> {
     }
 }
 
-struct WeakKeyStrongValueMap<Key: AnyObject, Value> {
+fileprivate struct WeakKeyStrongValueMap<Key: AnyObject, Value> {
     private var storage: [ObjectIdentifier: (key: WeakBox<Key>, value: Value)] = [:]
 
     mutating func object(forKey key: Key) -> Value? {
