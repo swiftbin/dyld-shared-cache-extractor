@@ -9,18 +9,18 @@
 import Foundation
 import MachOKit
 import FileIO
-#if canImport(os)
-import struct os.OSAllocatedUnfairLock
-#endif
+//#if canImport(os)
+//import struct os.OSAllocatedUnfairLock
+//#endif
 
 fileprivate final class FileHandleHolder: @unchecked Sendable {
     static let shared = FileHandleHolder()
 
-#if canImport(os)
-    private let lock: OSAllocatedUnfairLock = .init()
-#else
+//#if canImport(os)
+//    private let lock: OSAllocatedUnfairLock = .init()
+//#else
     private let lock: NSRecursiveLock = .init()
-#endif
+//#endif
 
 #if canImport(ObjectiveC)
     private let _mapTable: NSMapTable<FullDyldCache, FullDyldCache.File> = .weakToStrongObjects()
